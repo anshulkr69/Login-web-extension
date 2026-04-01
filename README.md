@@ -7,7 +7,7 @@ Chrome extension that automatically logs into the **Sophos captive portal** at
 
 1. When the page loads, the extension fills in the **primary credentials** and clicks **Sign In**.
 2. If the login fails (error message appears in `#statusmessage`), the extension automatically tries the **next fallback** credentials.
-3. It cycles through all 4 credential sets before restarting.
+3. It cycles through all fallback credential sets before restarting.
 
 
 ## Installation
