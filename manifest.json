@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Auto Login Extension",
+  "version": "5.0",
+  "description": "Automatically logs into the Sophos captive portal with secure credential management",
+  "permissions": ["activeTab", "storage", "tabs", "webNavigation"],
+  "host_permissions": ["http://192.168.0.2:8090/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Auto Login Settings"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://192.168.0.2:8090/httpclient.html*"],
+      "js": ["main-world.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["http://192.168.0.2:8090/httpclient.html*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "world": "ISOLATED"
+    }
+  ]
+}
