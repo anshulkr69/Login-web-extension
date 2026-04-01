@@ -14,8 +14,9 @@ Chrome extension that automatically logs into the **Sophos captive portal** at
 
 1. Open **Chrome** → navigate to `chrome://extensions/`
 2. Enable **Developer mode** (top-right toggle)
-3. Click **Load unpacked** → select this folder (`auto-login-extension`)
-4. Navigate to `http://192.168.0.2:8090/httpclient.html` — it will auto-login!
+3. Click **Load unpacked** → select this folder (`Login-web-extension`)
+4. Fill in the credentials by selecting the extension.
+5. Navigate to `http://192.168.0.2:8090/httpclient.html` — it will auto-login!
 
 ## Files
 
