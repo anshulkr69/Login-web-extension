@@ -103,10 +103,11 @@
   // ── Auto-close tab ────────────────────────────────────
 
   function closeTab() {
-    console.log('[AutoLogin] ✓ Login successful! Closing tab in 1.5s…');
+    console.log('[AutoLogin] ✓ Login successful! Closing tab…');
     clearAttempt();
     localStorage.removeItem(INDEX_KEY);
 
+    // Close as fast as possible — 300ms grace for any page-side cleanup
     setTimeout(() => {
       if (chrome.runtime && chrome.runtime.sendMessage) {
         chrome.runtime.sendMessage({ action: 'closeTab' }, () => {
@@ -117,7 +118,7 @@
       } else {
         window.close();
       }
-    }, 1500);
+    }, 300);
   }
 
   // ── Fill fields ───────────────────────────────────────
@@ -133,8 +134,10 @@
 
   function fillAndSubmit(credentials, index) {
     if (index >= credentials.length) {
-      console.log('[AutoLogin] All credentials exhausted, restarting from 0');
-      index = 0;
+      console.log('[AutoLogin] All credentials exhausted. Giving up.');
+      clearAttempt();
+      localStorage.removeItem(INDEX_KEY);
+      return;
     }
 
     const cred = credentials[index];
@@ -142,12 +145,12 @@
     const pEl = getPassword();
 
     if (!uEl || !pEl) {
-      console.warn('[AutoLogin] Input fields not found, retrying in 1s…');
-      setTimeout(() => fillAndSubmit(credentials, index), 1000);
+      console.warn('[AutoLogin] Input fields not found, retrying in 500ms…');
+      setTimeout(() => fillAndSubmit(credentials, index), 500);
       return;
     }
 
-    console.log(`[AutoLogin] Trying credential #${index + 1}: ${cred.user}`);
+    console.log(`[AutoLogin] Trying credential #${index + 1}/${credentials.length}: ${cred.user}`);
 
     setNativeValue(uEl, cred.user);
     setNativeValue(pEl, cred.password);
@@ -155,30 +158,48 @@
     setCredIndex(index);
     markAttempt();
 
+    // Re-establish observer for this attempt so success/error is detected
+    watchForResult(credentials);
+
     // Dispatch custom event to main-world.js which calls submitRequest()
     setTimeout(() => {
       console.log('[AutoLogin] Dispatching autologin-submit event to MAIN world');
       window.dispatchEvent(new CustomEvent('autologin-submit'));
-    }, 400);
+    }, 150);
   }
 
   // ── Fallback: move to next credential ─────────────────
 
   function tryNext(credentials) {
     const cur = getCredIndex();
-    const next = (cur + 1) % credentials.length;
-    console.log(`[AutoLogin] Credential #${cur + 1} failed → trying #${next + 1}`);
+    const next = cur + 1;
+    if (next >= credentials.length) {
+      console.log(`[AutoLogin] All ${credentials.length} credentials exhausted. No more to try.`);
+      clearAttempt();
+      localStorage.removeItem(INDEX_KEY);
+      return;
+    }
+    console.log(`[AutoLogin] Credential #${cur + 1} failed → trying #${next + 1} immediately`);
     clearAttempt();
-    setTimeout(() => fillAndSubmit(credentials, next), 800);
+    // Try next credential with minimal delay
+    setTimeout(() => fillAndSubmit(credentials, next), 200);
   }
 
   // ── Observe for error/success ─────────────────────────
 
-  let observerActive = false;
+  let currentObserver = null;
+  let currentPollId = null;
 
   function watchForResult(credentials) {
-    if (observerActive) return;
-    observerActive = true;
+    // Always tear down any previous observer/poll so we get fresh detection
+    if (currentObserver) {
+      currentObserver.disconnect();
+      currentObserver = null;
+    }
+    if (currentPollId) {
+      clearInterval(currentPollId);
+      currentPollId = null;
+    }
 
     const target = document.body;
 
@@ -187,16 +208,14 @@
 
       if (isLoginSuccessful()) {
         console.log('[AutoLogin] ✓ Success detected!');
-        mo.disconnect();
-        observerActive = false;
+        cleanup();
         closeTab();
         return;
       }
 
       if (isErrorVisible()) {
         console.log('[AutoLogin] ✗ Error detected');
-        mo.disconnect();
-        observerActive = false;
+        cleanup();
         tryNext(credentials);
       }
     });
@@ -209,19 +228,36 @@
       attributeFilter: ['class', 'style'],
     });
 
+    currentObserver = mo;
+
+    // Poll faster (every 800ms) to catch results quickly, up to 15 polls (12s)
     let polls = 0;
     const pollId = setInterval(() => {
       polls++;
       if (isLoginSuccessful()) {
-        clearInterval(pollId); mo.disconnect(); observerActive = false;
-        closeTab(); return;
+        cleanup();
+        closeTab();
+        return;
       }
       if (isErrorVisible()) {
-        clearInterval(pollId); mo.disconnect(); observerActive = false;
-        tryNext(credentials); return;
+        cleanup();
+        tryNext(credentials);
+        return;
       }
-      if (polls >= 10) clearInterval(pollId);
-    }, 2000);
+      if (polls >= 15) {
+        clearInterval(pollId);
+        if (currentPollId === pollId) currentPollId = null;
+      }
+    }, 800);
+
+    currentPollId = pollId;
+
+    function cleanup() {
+      mo.disconnect();
+      clearInterval(pollId);
+      currentObserver = null;
+      currentPollId = null;
+    }
   }
 
   // ── Load credentials from storage and start ───────────
@@ -286,12 +322,12 @@
       return;
     }
 
-    watchForResult(credentials);
+    // watchForResult is now called inside fillAndSubmit, no need to call here
 
     const idx = recentAttempt() ? getCredIndex() : 0;
     if (!recentAttempt()) setCredIndex(0);
 
-    setTimeout(() => fillAndSubmit(credentials, idx), 600);
+    setTimeout(() => fillAndSubmit(credentials, idx), 300);
   }
 
   // ── Bootstrap ─────────────────────────────────────────
